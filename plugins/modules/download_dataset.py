@@ -5,6 +5,12 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+from ansible.module_utils.basic import AnsibleModule
+import datahugger
+import os
+import pwd
+
+
 DOCUMENTATION = r'''
 ---
 module: download_dataset
@@ -22,6 +28,10 @@ options:
         description: The directory where the dataset should be saved.
         required: true
         type: str
+    owner:
+        description: The user owner of the directory where the dataset should be saved.
+        required: false
+        type: str
 
 requirements:
   - "python >= 3.8"
@@ -36,6 +46,7 @@ EXAMPLES = r'''
   grycap.dataset.download_dataset:
     dataset_url: 10.5061/dryad.x3ffbg7m8
     output_dir: /usr/local/datasets
+    owner: username
 '''
 
 RETURN = r'''
@@ -50,13 +61,28 @@ message:
     sample: "Dataset downloaded successfully to /usr/local/datasets"
 '''
 
-from ansible.module_utils.basic import AnsibleModule
-import datahugger
-import os
+
+def change_owner(path, owner):
+    """
+    Change the owner of the downloaded dataset directory.
+    """
+    try:
+        # Get the user ID of the specified owner
+        uid = pwd.getpwnam(owner).pw_uid
+
+        for root, dirs, files in os.walk(path):
+            for name in dirs + files:
+                os.chown(os.path.join(root, name), uid, -1)
+
+        os.chown(path, uid, -1)  # Change owner of the main directory as well
+    except Exception as e:
+        raise Exception(f"Failed to change owner: {str(e)}")
+
 
 def download_dataset(module):
     dataset_url = module.params['dataset_url']
     output_dir = module.params['output_dir']
+    owner = module.params.get('owner')
     dataset_name = dataset_url.split('/')[-1].replace('.', '_')
     dataset_path = os.path.join(output_dir, dataset_name)
 
@@ -78,9 +104,13 @@ def download_dataset(module):
             'changed': True,
             'msg': f"Dataset downloaded successfully to {output_dir}"
         }
+        if owner:
+            # Change ownership if specified
+            change_owner(dataset_path, owner)
         module.exit_json(**result)
     except Exception as e:
         module.fail_json(msg=f"Failed to download dataset: {str(e)}")
+
 
 def main():
     module_args = dict(
@@ -94,6 +124,7 @@ def main():
     )
 
     download_dataset(module)
+
 
 if __name__ == '__main__':
     main()
