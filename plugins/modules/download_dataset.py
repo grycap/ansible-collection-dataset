@@ -115,7 +115,8 @@ def download_dataset(module):
 def main():
     module_args = dict(
         dataset_url=dict(type='str', required=True),
-        output_dir=dict(type='str', required=True)
+        output_dir=dict(type='str', required=True),
+        owner=dict(type='str', required=False, default=None)
     )
 
     module = AnsibleModule(
