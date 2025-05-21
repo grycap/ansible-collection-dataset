@@ -68,7 +68,10 @@ def change_owner(path, owner):
     """
     try:
         # Get the user ID of the specified owner
-        uid = pwd.getpwnam(owner).pw_uid
+        if owner.isdigit():
+            uid = int(owner)
+        else:
+            uid = pwd.getpwnam(owner).pw_uid
 
         for root, dirs, files in os.walk(path):
             for name in dirs + files:
