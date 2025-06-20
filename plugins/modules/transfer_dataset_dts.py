@@ -78,9 +78,9 @@ from eosc_data_transfer_client.exceptions import EOSCError
 def transfer_dataset_fts(module):
     dataset_doi = module.params['dataset_doi']
     dts_token = module.params['dts_token']
-    destination = module.params['dts_token']
+    destination = module.params['destination']
     dts_endpoint = module.params['dts_endpoint']
-    overwrite = module.params['overwrite'] 
+    overwrite = module.params['overwrite']
 
     client = EOSCClient(dts_endpoint, token=dts_token)
 
