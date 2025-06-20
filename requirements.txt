@@ -1,1 +1,2 @@
 datahugger>=0.12
+eosc-data-transfer-client @ git+https://gitlab.cern.ch/batistal/eosc-data-transfer-client/
