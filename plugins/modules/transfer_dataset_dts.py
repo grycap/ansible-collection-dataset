@@ -148,7 +148,7 @@ def transfer_dataset_fts(module):
             if token_type == 'password':
                 user = dest_authorization.get('user', '')
                 token = dest_authorization.get('token', '')
-                auth_storage = base64.b64encode(f'{user}:{token}')
+                auth_storage = base64.b64encode(f'{user}:{token}'.encode()).decode()
             elif token_type in ['token', 'bearer']:
                 token = dest_authorization.get('token', '')
                 auth_storage = token
@@ -179,7 +179,7 @@ def main():
         dts_token=dict(type='str', required=True),
         destination=dict(type='str', required=True),
         destination_type=dict(type='str', required=True),
-        dest_authorization=dict(type='str', required=False, default={}),
+        dest_authorization=dict(type='dict', required=False, default={}),
         dts_endpoint=dict(type='str', required=False,
                           default="https://data-transfer.service.eosc-beyond.eu"),
         overwrite=dict(type='bool', required=False, default=False)
