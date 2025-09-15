@@ -28,6 +28,15 @@ options:
         description: The URL of the destination storage system
         required: true
         type: str
+    destination_type:
+        description: The type of the destination storage system (e.g., s3, dcache, storm ...). See DTS documentation for supported types
+        required: true
+        type: str
+    dest_authorization:
+        description: The remote authorization token if needed by the destination
+        required: false
+        default: None
+        type: str
     dts_endpoint:
         description: The URL of the DTS endpoint
         required: false
@@ -41,7 +50,7 @@ options:
 
 requirements:
   - "python >= 3.8"
-  - "eosc-data-transfer-client"
+  - "requests >= 2.20"
 
 author:
     - micafer (@micafer)
@@ -53,7 +62,13 @@ EXAMPLES = r'''
     dataset_doi: doi:10.5281/zenodo.10157504
     dts_endpoint: https://data-transfer.service.eosc-beyond.eu
     dts_token: access_token
-    destination: s3s://play.min.io/test
+    destination: https://play.min.io/test
+    destination_type: s3
+    dest_authorization:
+        token_type: password
+        user: miniouser
+        token: miniopassword
+    overwrite: true
 '''
 
 RETURN = r'''
@@ -68,58 +83,92 @@ jobid:
     sample: 1dab1f08-4db4-11f0-8c8d-fa163edd14cf"
 '''
 
-from ansible.module_utils.basic import AnsibleModule
-from eosc_data_transfer_client.client import EOSCClient
-from eosc_data_transfer_client.models import TransferRequest, FileTransfer, TransferParameters
-from eosc_data_transfer_client.endpoints import parse_doi, create_transfer
-from eosc_data_transfer_client.exceptions import EOSCError
+import json
+import requests
+import base64
+
+
+def resolve_doi(dts_endpoint, dataset_doi):
+    """
+    Resolve a DOI to its final URL using the Data Transfer Service parser endpoint.
+    """
+    try:
+        response = requests.get(f'{dts_endpoint}/parser?doi={dataset_doi}',
+                                headers={'Accept': 'application/json'},
+                                timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data.get('elements', [])
+    except requests.RequestException as e:
+        raise ValueError(f"Failed to resolve DOI {dataset_doi}: {str(e)}")
+
+
+def create_transfer_request(sources, dest, overwrite):
+    params = {
+        "verifyChecksum": True,
+        "overwrite": overwrite,
+        "retry": 0,
+        "priority": 0
+    }
+
+    if not dest.endswith('/'):
+        dest += '/'
+    files = []
+    for item in sources:
+        files.append({
+            "sources": [item.get('downloadUrl')],
+            "destinations": [dest + item.get('name')]
+        })
+    return json.dumps({"files": files, "params": params})
 
 
 def transfer_dataset_fts(module):
     dataset_doi = module.params['dataset_doi']
     dts_token = module.params['dts_token']
     destination = module.params['destination']
+    destination_type = module.params['destination_type']
     dts_endpoint = module.params['dts_endpoint']
     overwrite = module.params['overwrite']
-
-    client = EOSCClient(dts_endpoint, token=dts_token)
-
-    try:
-        storage_elements = parse_doi(client, dataset_doi)
-    except EOSCError as e:
-        module.fail_json(msg=f"Failed to parse de DOI: {str(e)}")
-
-    # Create transfer for the data transfer service
-    transfers = []
-    for element in storage_elements.elements:
-        transfers.append(FileTransfer(
-            sources=[element.downloadUrl],
-            destinations=[destination + element.name],
-            checksum=element.checksum,
-            filesize=element.size
-        ))
-
-    # Create tranfer paramenters
-    params = TransferParameters(
-        verifyChecksum=True,
-        overwrite=overwrite,
-        retry=0
-    )
-
-    # Create the file transfer request
-    request = TransferRequest(
-        files=transfers,
-        params=params
-    )
+    dest_authorization = module.params.get('dest_authorization', {})
 
     # Submit file transfer request to the EOSC data transfer API
     try:
-        response = create_transfer(client, request)
-        module.exit_json(
-            changed=True,
-            jobid=response.jobId
-        )
-    except EOSCError as e:
+        elements = resolve_doi(dts_endpoint, dataset_doi)
+        payload = create_transfer_request(elements, destination, overwrite)
+
+        headers = {
+            'Authorization': f'Bearer {dts_token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        if dest_authorization:
+            auth_storage = None
+            token_type = dest_authorization.get('token_type', 'password')
+            if token_type == 'password':
+                user = dest_authorization.get('user', '')
+                token = dest_authorization.get('token', '')
+                auth_storage = base64.b64encode(f'{user}:{token}')
+            elif token_type in ['token', 'bearer']:
+                token = dest_authorization.get('token', '')
+                auth_storage = token
+
+            if auth_storage:
+                headers['Authorization-Storage'] = auth_storage
+
+        response = requests.post(f"{dts_endpoint}/transfers?dest={destination_type}",
+                                 headers=headers, data=payload, timeout=30)
+        response.raise_for_status()
+        response_data = response.json()
+        joibid = response_data.get('jobId', None)
+
+        if joibid:
+            module.exit_json(
+                changed=True,
+                jobid=joibid
+            )
+        else:
+            module.fail_json(msg=f"Failed to retrieve job ID from the transfer response: {response.text}")
+    except Exception as e:
         module.fail_json(msg=f"Failed to create the transfer: {str(e)}")
 
 
@@ -128,6 +177,8 @@ def main():
         dataset_doi=dict(type='str', required=True),
         dts_token=dict(type='str', required=True),
         destination=dict(type='str', required=True),
+        destination_type=dict(type='str', required=True),
+        dest_authorization=dict(type='str', required=False, default={}),
         dts_endpoint=dict(type='str', required=False,
                           default="https://data-transfer.service.eosc-beyond.eu"),
         overwrite=dict(type='bool', required=False, default=False)
