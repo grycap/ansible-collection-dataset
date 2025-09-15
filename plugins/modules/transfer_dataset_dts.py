@@ -86,6 +86,7 @@ jobid:
 import json
 import requests
 import base64
+from ansible.module_utils.basic import AnsibleModule
 
 
 def resolve_doi(dts_endpoint, dataset_doi):
