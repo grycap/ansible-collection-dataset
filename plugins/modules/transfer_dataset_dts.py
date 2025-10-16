@@ -108,7 +108,7 @@ def create_transfer_request(sources, dest, overwrite):
     params = {
         "verifyChecksum": True,
         "overwrite": overwrite,
-        "retry": 0,
+        "retry": 2,
         "priority": 0
     }
 
@@ -195,3 +195,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
