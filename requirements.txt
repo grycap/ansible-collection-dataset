@@ -1,2 +1,2 @@
-datahugger>=0.12
+datahugger @ git+https://github.com/grycap/datahugger
 eosc-data-transfer-client @ git+https://gitlab.cern.ch/batistal/eosc-data-transfer-client/
